@@ -418,50 +418,76 @@ async function querySupabaseSchema({ operation, table }) {
   }
 }
 
-// Función para modificar esquema (simulado)
+// Función para modificar esquema (REAL)
 async function modifySupabaseSchema({ operation, table, column, dataType }) {
-  console.warn('Schema modification requested (SIMULATED):', { operation, table, column, dataType });
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   
-  const result = {
-    success: true,
-    operation: operation,
-    table: table,
-    simulated: true,
-    message: '',
-    warning: '⚠️ Esta es una SIMULACIÓN. Modificaciones reales requieren configuración SQL adicional en Supabase.',
-    timestamp: new Date().toISOString()
-  };
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error('Credenciales de Supabase no configuradas');
+  }
+
+  console.warn('Schema modification requested (REAL):', { operation, table, column, dataType });
   
+  let sqlQuery = '';
+  
+  // Construir SQL según la operación
   switch (operation) {
     case 'create_table':
-      result.message = `SIMULACIÓN: Crear tabla '${table}' solicitada.`;
+      sqlQuery = `CREATE TABLE IF NOT EXISTS "${table}" (
+        id SERIAL PRIMARY KEY,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );`;
       break;
       
     case 'add_column':
       if (!column || !dataType) {
         throw new Error('Nombre de columna y tipo de datos requeridos para add_column');
       }
-      result.message = `SIMULACIÓN: Agregar columna '${column}' de tipo '${dataType}' a tabla '${table}'.`;
+      sqlQuery = `ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "${column}" ${dataType};`;
       break;
       
     case 'drop_column':
       if (!column) {
         throw new Error('Nombre de columna requerido para drop_column');
       }
-      result.message = `SIMULACIÓN: Eliminar columna '${column}' de tabla '${table}'. ¡OPERACIÓN DESTRUCTIVA!`;
+      sqlQuery = `ALTER TABLE "${table}" DROP COLUMN IF EXISTS "${column}";`;
       break;
       
     case 'drop_table':
-      result.message = `SIMULACIÓN: Eliminar tabla '${table}'. ¡OPERACIÓN DESTRUCTIVA!`;
+      sqlQuery = `DROP TABLE IF EXISTS "${table}";`;
       break;
       
     default:
       throw new Error(`Operación '${operation}' no soportada`);
   }
+
+  // Ejecutar SQL usando Supabase RPC
+  const response = await fetch(`${supabaseUrl}/rest/v1/rpc/exec_sql`, {
+    method: 'POST',
+    headers: {
+      'apikey': supabaseKey,
+      'Authorization': `Bearer ${supabaseKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ query: sqlQuery })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Error ejecutando SQL: ${response.status} - ${errorText}`);
+  }
+
+  const result = await response.json();
   
   return {
     success: true,
-    data: result
+    operation: operation,
+    table: table,
+    simulated: false,  // ← AHORA ES REAL
+    sql_executed: sqlQuery,
+    data: result,
+    timestamp: new Date().toISOString()
   };
 }
 
